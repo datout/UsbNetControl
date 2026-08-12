@@ -25,7 +25,15 @@
 
 每个 Release 同时提供 ZIP 与 `SHA256SUMS.txt`。
 
-> 当前发布版未使用公开受信任的 Authenticode 代码签名证书，因此 Windows UAC / SmartScreen 仍可能显示“未知发布者”。GitHub Release 和 Artifact Attestation 可以证明构建来源，但不会替代 Windows 代码签名。
+> 当前发布版在 SignPath Foundation 申请获批前仍可能是未签名版本，因此 Windows UAC / SmartScreen 可能显示“未知发布者”。GitHub Release 和 Artifact Attestation 可以证明构建来源，但不会替代 Windows Authenticode 代码签名。
+
+## Code signing policy
+
+本项目正在准备使用 SignPath Foundation 的开源代码签名流程。完整策略见 [CODE_SIGNING.md](CODE_SIGNING.md)，隐私说明见 [PRIVACY.md](PRIVACY.md)。
+
+Free code signing provided by SignPath.io, certificate by SignPath Foundation.
+
+本程序不包含遥测、广告或自动联网功能。正式启用 SignPath 后，官方 Windows Release 将由 GitHub Actions 从本仓库源码构建，经 SignPath 验证构建来源并进行 Authenticode 签名。
 
 ## 使用
 

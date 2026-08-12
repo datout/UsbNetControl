@@ -61,4 +61,5 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "UsbNetControl $GITHUB_REF_NAME" \
+            --notes "Code signing policy: https://github.com/datout/UsbNetControl/blob/main/CODE_SIGNING.md" \
             --generate-notes

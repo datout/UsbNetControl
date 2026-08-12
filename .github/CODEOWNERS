@@ -1,0 +1,5 @@
+# Security-sensitive release and signing configuration
+/.github/workflows/ @datout
+/signpath/ @datout
+/CODE_SIGNING.md @datout
+/PRIVACY.md @datout

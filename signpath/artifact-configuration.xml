@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file-set product-name="UsbNetControl" product-version="${version}">
+      <include path="UsbNetControl-v${version}-win-x64.exe" />
+      <include path="UsbNetControl-v${version}-win-arm64.exe" />
+      <for-each>
+        <authenticode-sign
+          description="UsbNetControl"
+          description-url="https://github.com/datout/UsbNetControl" />
+      </for-each>
+    </pe-file-set>
+  </zip-file>
+</artifact-configuration>

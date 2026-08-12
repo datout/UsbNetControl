@@ -1,0 +1,156 @@
+# Template: replace .github/workflows/release.yml with this file AFTER
+# SignPath Foundation approves the project and provides the SignPath settings.
+name: Release (SignPath signed)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  actions: read
+  contents: write
+  id-token: write
+  attestations: write
+
+env:
+  GOVERSIONINFO_VERSION: v1.7.0
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Prepare version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected tag format vMAJOR.MINOR.PATCH, got: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "major=$MAJOR" >> "$GITHUB_OUTPUT"
+          echo "minor=$MINOR" >> "$GITHUB_OUTPUT"
+          echo "patch=$PATCH" >> "$GITHUB_OUTPUT"
+
+      - name: Install Windows version-resource generator
+        shell: bash
+        run: |
+          set -euo pipefail
+          go install "github.com/josephspurrier/goversioninfo/cmd/goversioninfo@${GOVERSIONINFO_VERSION}"
+          goversioninfo -example > versioninfo.json
+
+      - name: Build unsigned release binaries with Windows metadata
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          MAJOR: ${{ steps.meta.outputs.major }}
+          MINOR: ${{ steps.meta.outputs.minor }}
+          PATCH: ${{ steps.meta.outputs.patch }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/unsigned
+
+          build_one() {
+            ARCH="$1"
+            SUFFIX="$2"
+            OUT="dist/unsigned/UsbNetControl-v${VERSION}-win-${SUFFIX}.exe"
+
+            rm -f resource.syso
+            GOARCH="$ARCH" goversioninfo \
+              -o resource.syso \
+              -company="datout" \
+              -description="USB storage and network adapter control for Windows" \
+              -internal-name="UsbNetControl" \
+              -original-name="UsbNetControl.exe" \
+              -product-name="UsbNetControl" \
+              -product-version="${VERSION}" \
+              -file-version="${VERSION}" \
+              -copyright="Copyright (c) 2026 datout" \
+              -ver-major="$MAJOR" -ver-minor="$MINOR" -ver-patch="$PATCH" -ver-build=0 \
+              -product-ver-major="$MAJOR" -product-ver-minor="$MINOR" -product-ver-patch="$PATCH" -product-ver-build=0
+
+            GOOS=windows GOARCH="$ARCH" CGO_ENABLED=0 \
+              go build -trimpath \
+                -ldflags="-H=windowsgui -s -w -X main.appVersion=${VERSION}" \
+                -o "$OUT" .
+            rm -f resource.syso
+          }
+
+          build_one amd64 x64
+          build_one arm64 arm64
+          rm -f versioninfo.json
+
+      - name: Upload unsigned artifact for SignPath origin verification
+        id: upload-unsigned
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-windows-binaries
+          path: dist/unsigned/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Submit SignPath signing request
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: dist/signed
+          parameters: |
+            version: ${{ toJSON(steps.meta.outputs.version) }}
+
+      - name: Package signed binaries
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/pkg-x64 dist/pkg-arm64 dist/release
+
+          X64="dist/signed/UsbNetControl-v${VERSION}-win-x64.exe"
+          ARM64="dist/signed/UsbNetControl-v${VERSION}-win-arm64.exe"
+          test -f "$X64"
+          test -f "$ARM64"
+
+          cp "$X64" "dist/release/UsbNetControl-v${VERSION}-win-x64.exe"
+          cp "$ARM64" "dist/release/UsbNetControl-v${VERSION}-win-arm64.exe"
+
+          cp "$X64" README.md LICENSE CODE_SIGNING.md PRIVACY.md dist/pkg-x64/
+          cp "$ARM64" README.md LICENSE CODE_SIGNING.md PRIVACY.md dist/pkg-arm64/
+
+          (cd dist/pkg-x64 && zip -q "../release/UsbNetControl-v${VERSION}-win-x64.zip" ./*)
+          (cd dist/pkg-arm64 && zip -q "../release/UsbNetControl-v${VERSION}-win-arm64.zip" ./*)
+          (cd dist/release && sha256sum *.exe *.zip > SHA256SUMS.txt)
+
+      - name: Generate GitHub artifact attestations
+        uses: actions/attest@v4
+        with:
+          subject-path: 'dist/release/*'
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/release/* \
+            --title "UsbNetControl $GITHUB_REF_NAME" \
+            --notes "Code signing policy: https://github.com/datout/UsbNetControl/blob/main/CODE_SIGNING.md" \
+            --generate-notes
