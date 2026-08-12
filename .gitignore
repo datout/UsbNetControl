@@ -1,0 +1,12 @@
+# Build outputs
+*.exe
+*.zip
+SHA256SUMS.txt
+dist/
+build/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

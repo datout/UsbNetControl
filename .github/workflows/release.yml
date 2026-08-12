@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Build release binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p dist/pkg-x64 dist/pkg-arm64
+
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath \
+              -ldflags="-H=windowsgui -s -w -X main.appVersion=${VERSION}" \
+              -o "dist/UsbNetControl-v${VERSION}-win-x64.exe" .
+
+          GOOS=windows GOARCH=arm64 CGO_ENABLED=0 \
+            go build -trimpath \
+              -ldflags="-H=windowsgui -s -w -X main.appVersion=${VERSION}" \
+              -o "dist/UsbNetControl-v${VERSION}-win-arm64.exe" .
+
+          cp "dist/UsbNetControl-v${VERSION}-win-x64.exe" README.md LICENSE dist/pkg-x64/
+          cp "dist/UsbNetControl-v${VERSION}-win-arm64.exe" README.md LICENSE dist/pkg-arm64/
+
+          (cd dist/pkg-x64 && zip -q "../UsbNetControl-v${VERSION}-win-x64.zip" ./*)
+          (cd dist/pkg-arm64 && zip -q "../UsbNetControl-v${VERSION}-win-arm64.zip" ./*)
+
+          rm -rf dist/pkg-x64 dist/pkg-arm64
+          (cd dist && sha256sum *.exe *.zip > SHA256SUMS.txt)
+
+      - name: Generate artifact attestations
+        uses: actions/attest@v4
+        with:
+          subject-path: 'dist/*'
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "UsbNetControl $GITHUB_REF_NAME" \
+            --generate-notes
